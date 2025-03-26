@@ -11,3 +11,5 @@
 
 # Miscellaneous
 *.log
+config.json
+GitGetter/
