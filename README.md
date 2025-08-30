@@ -32,3 +32,4 @@ echo Installation complete! Restart your terminal to use GitGetter.
 pause
 
 After which you'll run it and its now installed. You can then run the program with .\GitGetter which will download all the repos from the repos.json file.
+The files will then end up in a subfolder called GitGetter/FetchedRepos.
