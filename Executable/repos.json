@@ -5,10 +5,5 @@
             "repo": "https://github.com/KarlOlofA/LinkedLists/",
             "branch": "main"
         },
-        {
-			"name" : "DevConsole",
-            "repo": "https://github.com/tomjerbo/DevConsole",
-            "branch": "main"
-        }
     ]
 }
