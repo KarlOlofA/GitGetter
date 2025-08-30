@@ -5,38 +5,24 @@ use tokio;
 use std::error::Error;
 use std::fs;
 use zip::read;
-use serde_json::Value;
 use serde::{Deserialize, Serialize};
-use reqwest::header::{AUTHORIZATION, USER_AGENT};
+use reqwest::header::{USER_AGENT};
 
 #[tokio::main]
 async fn main() {
-    let _ = Cli::parse();
+    //let _ = Cli::parse();
 
     let json_data = read_json();
 
     let data = json_data.unwrap();
-    println!("Go Data: {:?}", data.repositories.len());
     down_load_repos(data).await;
 }
 
 
 async fn down_load_repos(data: Repositories) {
     for repo in &data.repositories {
-        println!("Attempting download: {:?}", repo.repo);
         download_github_repo_as_zip(&repo.name, &repo.repo, &repo.branch).await.unwrap();
     }
-}
-
-fn get_token() -> Result<String, Box<dyn Error>> {
-    let file_content = fs::read_to_string("config.json")?;
-    
-    let json: Value = serde_json::from_str(&file_content)?;
-    
-    json["token"]
-        .as_str()
-        .map(|s| s.to_string())
-        .ok_or_else(|| "Token not found in config.json".into())
 }
 
 async fn download_github_repo_as_zip(
