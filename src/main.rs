@@ -1,16 +1,14 @@
-use clap::Parser;
 use reqwest::Client;
 use std::path::{PathBuf};
 use tokio;
 use std::error::Error;
 use std::fs;
 use zip::read;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize}; 
 use reqwest::header::{USER_AGENT};
 
 #[tokio::main]
 async fn main() {
-    //let _ = Cli::parse();
 
     let json_data = read_json();
 
@@ -92,14 +90,6 @@ async fn extract_zip_file(zip_path: &PathBuf, extract_to: &PathBuf) -> Result<()
         }
     }
     Ok(())
-}
-
-
-#[derive(Parser)]
-struct Cli {
-    owner: String,
-    repo: String,
-    branch: String,
 }
 
 #[derive(Serialize, Deserialize)]
