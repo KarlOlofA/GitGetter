@@ -1,34 +1,30 @@
 use clap::Parser;
 use reqwest::Client;
-use serde::Deserialize;
-use std::fs::{create_dir_all, File};
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use tokio;
-use async_recursion::async_recursion;
 use std::error::Error;
 use std::fs;
+use zip::read;
 use serde_json::Value;
-use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT};
+use serde::{Deserialize, Serialize};
+use reqwest::header::{AUTHORIZATION, USER_AGENT};
 
 #[tokio::main]
 async fn main() {
-    let args = Cli::parse();
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/contents/",
-        args.owner, args.repo
-    );
+    let _ = Cli::parse();
 
-    let client = Client::new();
-    
-    match get_token() {
-        Ok(token) => {
-            match fetch_git_contents(&token, &client, &url, &args.output).await {
-                Ok(user) => println!("{:#?}", user),
-                Err(e) => eprintln!("Error fetching GitHub user: {}", e),
-            }
-        }
-        Err(e) => eprintln!("Error reading token: {}", e),
+    let json_data = read_json();
+
+    let data = json_data.unwrap();
+    println!("Go Data: {:?}", data.repositories.len());
+    down_load_repos(data).await;
+}
+
+
+async fn down_load_repos(data: Repositories) {
+    for repo in &data.repositories {
+        println!("Attempting download: {:?}", repo.repo);
+        download_github_repo_as_zip(&repo.name, &repo.repo, &repo.branch).await.unwrap();
     }
 }
 
@@ -43,102 +39,91 @@ fn get_token() -> Result<String, Box<dyn Error>> {
         .ok_or_else(|| "Token not found in config.json".into())
 }
 
-#[async_recursion]
-async fn fetch_git_contents(token: &str, client: &Client, url: &String, output: &PathBuf) -> reqwest::Result<()> {
+async fn download_github_repo_as_zip(
+    name: &str,
+    repo: &str,
+    branch: &str,
+) -> Result<(), Box<dyn Error>> {
+    let url = format!(
+        "{}/archive/refs/heads/{}.zip",
+        repo, branch
+    );
 
-    let mut headers = HeaderMap::new();
+    println!("Starting download: {:?}", name);
+    let output_path: PathBuf = format!("./GitGetter/FetchedRepos/{}.zip", name).into();
+    let extract_path: PathBuf = format!("./GitGetter/FetchedRepos/{}", name).into();
 
-    match HeaderValue::from_str(&format!("token {}", token)) {
-        Ok(val) => {headers.insert(AUTHORIZATION, val);}
-        Err(e) => {
-            println!("{}", e);
-            return Ok(())
-        },
-    }
-    headers.insert(USER_AGENT, HeaderValue::from_static("GitGetter"));
-
+    let client = Client::new();
     let response = client
-        .get(url)
-        .headers(headers)
-        .send().await?;
+        .get(&url)
+        .header(USER_AGENT, "reqwest")
+        .send()
+        .await?;
 
-    let x = response.json::<Vec<GitHubItem>>().await?;
+    let bytes = response.bytes().await?;
 
-    for item in x {
-        println!("New ITEM -> {:?}", item);
-        match item {
-            GitHubItem::File {
-                path, download_url, ..
-            } => {
-                if let Some(url) = download_url {
-                    let file_path = output.join(path);
-                    println!("Downloading: {}", file_path.display());
-                    download_file(client, &url, &file_path).await?;
-                }
-            }
-            GitHubItem::Directory { path, .. } => {
-                let dir_url = format!("{}/{}", url, path);
-                let dir_path = output.join(path);
-                match create_directory(&dir_path) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!("Error: {e}");
-                    }
-                }
-                fetch_git_contents(token, client, &dir_url, output).await;
-            }
-        }
+    if let Some(parent) = output_path.parent() {
+        let _ = fs::create_dir_all(parent);
     }
 
+    let _ = fs::write(&output_path, &bytes);
+    println!("Repository downloaded and saved to: {:?}", output_path);
+    extract_zip_file(&output_path, &extract_path).await.unwrap();
+    fs::remove_file(&output_path)?;
     Ok(())
 }
 
-fn create_directory(path: &Path) -> std::io::Result<()> {
-    if !path.exists() {
-        create_dir_all(path)
-    } else {
-        Ok(()) 
+fn read_json() -> Result<Repositories, Box<dyn Error>>{
+
+    let path = "./repos.json";
+    let data = fs::read_to_string(&path)?;
+    let obj: Repositories = serde_json::from_str(&data)?;
+
+    for repository in &obj.repositories {
+        println!("{} - {}", repository.repo, repository.branch);
     }
+    Ok(obj)
 }
 
-async fn download_file(client: &Client, url: &str, file_path: &Path) -> reqwest::Result<()> {
-    let response = client.get(url).header("User-Agent", "rust-cli").send().await?;
+async fn extract_zip_file(zip_path: &PathBuf, extract_to: &PathBuf) -> Result<(), Box<dyn Error>> {
+    let file = fs::File::open(zip_path)?;
+    let mut archive = read::ZipArchive::new(file)?;
 
-    match response.bytes().await {
-        Ok(bytes) => {
-            let file = File::create(file_path);
-            match file {
-                Ok(mut file) => {
-                    file.write_all(&bytes);},
-                Err(e) => {println!("{e}");}
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        let outpath = extract_to.join(file.sanitized_name());
+
+        if (*file.name()).ends_with('/') {
+            fs::create_dir_all(&outpath)?;
+        } else {
+            if let Some(p) = outpath.parent() {
+                if !p.exists() {
+                    fs::create_dir_all(p)?;
+                }
             }
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("Failed to read bytes from response: {}", e);
-            Err(e)
+            let mut outfile = fs::File::create(&outpath)?;
+            std::io::copy(&mut file, &mut outfile)?;
         }
     }
+    Ok(())
 }
+
 
 #[derive(Parser)]
 struct Cli {
     owner: String,
     repo: String,
-    #[arg(short, long, default_value = "./GitGetter")]
-    output: PathBuf,
+    branch: String,
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(tag = "type")]
-enum GitHubItem {
-    #[serde(rename = "file")]
-    File {
-        name: String,
-        path: String,
-        #[serde(rename = "download_url")]
-        download_url: Option<String>,
-    },
-    #[serde(rename = "dir")]
-    Directory { name: String, path: String },
+#[derive(Serialize, Deserialize)]
+struct Repositories {
+    repositories: Vec<Repository>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Repository {
+    name: String,
+    repo: String,
+    branch: String,
 }
