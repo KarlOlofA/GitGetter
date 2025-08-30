@@ -1,5 +1,6 @@
 # Build artifacts
 /target/
+/FetchedRepos/
 
 # Generated files
 **/*.rs.bk

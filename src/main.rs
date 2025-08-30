@@ -13,11 +13,11 @@ async fn main() {
     let json_data = read_json();
 
     let data = json_data.unwrap();
-    down_load_repos(data).await;
+    download_repos(data).await;
 }
 
 
-async fn down_load_repos(data: Repositories) {
+async fn download_repos(data: Repositories) {
     for repo in &data.repositories {
         download_github_repo_as_zip(&repo.name, &repo.repo, &repo.branch).await.unwrap();
     }
@@ -34,8 +34,8 @@ async fn download_github_repo_as_zip(
     );
 
     println!("Starting download: {:?}", name);
-    let output_path: PathBuf = format!("./GitGetter/FetchedRepos/{}.zip", name).into();
-    let extract_path: PathBuf = format!("./GitGetter/FetchedRepos/{}", name).into();
+    let output_path: PathBuf = format!("./FetchedRepos/{}.zip", name).into();
+    let extract_path: PathBuf = format!("./FetchedRepos/{}", name).into();
 
     let client = Client::new();
     let response = client
